@@ -1,4 +1,5 @@
 import glob
+from re import VERBOSE
 import tensorflow as tf
 from tensorflow.keras.preprocessing.image import load_img
 import numpy as np
@@ -7,19 +8,21 @@ from utils import make_folder
 import cv2
 import os
 
-
+from natsort import natsorted
 from keras_preprocessing.image import ImageDataGenerator
 from PIL import Image as pil_image
 
+train_paths = sorted(filter(os.path.isfile,glob.glob('train_img/' + '*') ) )
+mask_paths = sorted(filter(os.path.isfile,glob.glob('train_label/' + '*') ) )
 
-train_paths = sorted(glob.glob('./Data_preprocessing/train_img/*.jpg', recursive=True))
-mask_paths = sorted(glob.glob('./Data_preprocessing/train_label/*.png', recursive=True))
+valid_paths = sorted(filter(os.path.isfile,glob.glob('val_img/' + '*') ) )
+valid_mask_paths = sorted(filter(os.path.isfile,glob.glob('val_label/' + '*') ) )
 
-valid_paths = sorted(glob.glob('./Data_preprocessing/val_img/*.jpg', recursive=True))
-valid_mask_paths = sorted(glob.glob('./Data_preprocessing/val_label/*.png', recursive=True))
+test_paths = sorted(filter(os.path.isfile,glob.glob('test_img/' + '*') ) )
+test_mask_paths = sorted(filter(os.path.isfile,glob.glob('test_label/' + '*') ) )
 
-test_paths = sorted(glob.glob('./Data_preprocessing/test_img/*.jpg', recursive=True))
-test_mask_paths = sorted(glob.glob('./Data_preprocessing/test_label/*.png', recursive=True))
+test_paths = natsorted(test_paths)
+test_mask_paths = natsorted(test_mask_paths)
 
 
 class Datagen(tf.keras.utils.Sequence):
@@ -83,7 +86,7 @@ loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
     loss=loss,
-    metrics=["accuracy"],
+    metrics=["accuracy", tf.keras.metrics.MeanIoU(num_classes=19)],
 )
 
 checkpoint_filepath = "model_checkpoint"
@@ -126,12 +129,12 @@ if use_saved_model:
     #loss, acc = model.evaluate_generator(test_generator, steps=3, verbose=0)
     #print('Restored model, accuracy: {:5.2f}%'.format(100 * acc))
     make_folder("predictionimages")
-    predictions = model.predict_generator(test_generator, steps = 3, verbose = 2)
+    predictions = model.predict_generator(test_generator, steps = 3)
     predictions = np.squeeze(predictions)
     predictions = np.argmax(predictions, axis=3)
-    print(predictions.shape)
+    #print(predictions.shape)
     for i, ID in enumerate(predictions):
-        print(ID.shape)
+        #print(ID.shape)
         image = os.path.join("predictionimages", str(i) + '.png')
         print(image)
         cv2.imwrite(image, ID)
