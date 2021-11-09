@@ -3,6 +3,10 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.image import load_img
 import numpy as np
 from Deeplabv3plus import DeeplabV3Plus
+from utils import make_folder
+import cv2
+import os
+
 
 from keras_preprocessing.image import ImageDataGenerator
 from PIL import Image as pil_image
@@ -13,6 +17,10 @@ mask_paths = sorted(glob.glob('./Data_preprocessing/train_label/*.png', recursiv
 
 valid_paths = sorted(glob.glob('./Data_preprocessing/val_img/*.jpg', recursive=True))
 valid_mask_paths = sorted(glob.glob('./Data_preprocessing/val_label/*.png', recursive=True))
+
+test_paths = sorted(glob.glob('./Data_preprocessing/test_img/*.jpg', recursive=True))
+test_mask_paths = sorted(glob.glob('./Data_preprocessing/test_label/*.png', recursive=True))
+
 
 class Datagen(tf.keras.utils.Sequence):
     def __init__(self, train_paths, mask_paths, batch_size=32, n_classes=19, dim = (256,256), n_channels = 3, image_size = 256):
@@ -67,7 +75,7 @@ class Datagen(tf.keras.utils.Sequence):
 
 training_generator = Datagen(train_paths, mask_paths, batch_size=10)
 validation_generator = Datagen(valid_paths, valid_mask_paths, batch_size=10)
-
+test_generator = Datagen(test_paths, test_mask_paths, batch_size=10)
 
 model = DeeplabV3Plus(image_size=256, num_classes=19)
 model.summary()
@@ -98,11 +106,36 @@ reduceonplateau = tf.keras.callbacks.ReduceLROnPlateau(
         min_lr=0.0
     )
 
+# model.fit_generator(generator=training_generator,
+#                     validation_data=validation_generator,
+#                     use_multiprocessing=False,
+#                     epochs = 40,
+#                     # initial_epoch=50,
+#                     callbacks = [model_checkpoint_callback, reduceonplateau] ,
+#                     workers = 6)
 
-model.fit_generator(generator=training_generator,
-                    validation_data=validation_generator,
-                    use_multiprocessing=False,
-                    epochs = 50,
-                    # initial_epoch=50,
-                    callbacks = [model_checkpoint_callback, reduceonplateau] ,
-                    workers = 6)
+use_saved_model = True    
+#####################Loading saved model if one exsists
+# if not os.path.exists('checkpoint_filepath/saved_model.pb') & use_saved_model:
+#     model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=0.001), loss = 'categorical_crossentropy', metrics = ["accuracy"],)
+# else:
+if use_saved_model:
+
+    # model.load_weights('checkpoint/saved_model.pb') #load the model from file
+    model = tf.keras.models.load_model(checkpoint_filepath)
+    #loss, acc = model.evaluate_generator(test_generator, steps=3, verbose=0)
+    #print('Restored model, accuracy: {:5.2f}%'.format(100 * acc))
+    make_folder("predictionimages")
+    predictions = model.predict_generator(test_generator, steps = 3, verbose = 2)
+    predictions = np.squeeze(predictions)
+    predictions = np.argmax(predictions, axis=3)
+    print(predictions.shape)
+    for i, ID in enumerate(predictions):
+        print(ID.shape)
+        image = os.path.join("predictionimages", str(i) + '.png')
+        print(image)
+        cv2.imwrite(image, ID)
+
+
+
+#model.save("newmodel")
