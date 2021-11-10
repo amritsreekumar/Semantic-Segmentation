@@ -4,29 +4,43 @@ import tensorflow as tf
 from tensorflow.keras.preprocessing.image import load_img
 import numpy as np
 from Deeplabv3plus import DeeplabV3Plus
-from utils import make_folder
+#from utils import make_folder
 import cv2
 import os
 
 from natsort import natsorted
-from keras_preprocessing.image import ImageDataGenerator
 from PIL import Image as pil_image
 
-train_paths = sorted(filter(os.path.isfile,glob.glob('train_img/' + '*') ) )
-mask_paths = sorted(filter(os.path.isfile,glob.glob('train_label/' + '*') ) )
+train_paths = natsorted(filter(os.path.isfile,glob.glob('train_img/' + '*') ) )
+mask_paths = natsorted(filter(os.path.isfile,glob.glob('train_label/' + '*') ) )
 
-valid_paths = sorted(filter(os.path.isfile,glob.glob('val_img/' + '*') ) )
-valid_mask_paths = sorted(filter(os.path.isfile,glob.glob('val_label/' + '*') ) )
+valid_paths = natsorted(filter(os.path.isfile,glob.glob('val_img/' + '*') ) )
+valid_mask_paths = natsorted(filter(os.path.isfile,glob.glob('val_label/' + '*') ) )
 
-test_paths = sorted(filter(os.path.isfile,glob.glob('test_img/' + '*') ) )
-test_mask_paths = sorted(filter(os.path.isfile,glob.glob('test_label/' + '*') ) )
+test_paths = natsorted(filter(os.path.isfile,glob.glob('test_img/' + '*') ) )
+test_mask_paths = natsorted(filter(os.path.isfile,glob.glob('test_label/' + '*') ) )
 
-test_paths = natsorted(test_paths)
-test_mask_paths = natsorted(test_mask_paths)
+# test_paths = natsorted(test_paths)
+# test_mask_paths = natsorted(test_mask_paths)
 
+
+class UpdatedMeanIoU(tf.keras.metrics.MeanIoU):
+  def __init__(self,
+               y_true=None,
+               y_pred=None,
+               num_classes=None,
+               name=None,
+               dtype=None):
+    super(UpdatedMeanIoU, self).__init__(num_classes = num_classes,name=name, dtype=dtype)
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    y_pred = tf.math.argmax(y_pred, axis=-1)
+    return super().update_state(y_true, y_pred, sample_weight)
+
+newIOU = UpdatedMeanIoU
 
 class Datagen(tf.keras.utils.Sequence):
-    def __init__(self, train_paths, mask_paths, batch_size=32, n_classes=19, dim = (256,256), n_channels = 3, image_size = 256):
+    def __init__(self, train_paths, mask_paths, batch_size=5, n_classes=19, dim = (512,512), n_channels = 3, image_size = 512):
         self.list_IDs = train_paths
         self.image_size = image_size
         self.mask_paths = mask_paths
@@ -76,20 +90,21 @@ class Datagen(tf.keras.utils.Sequence):
         return X,y
 
 
-training_generator = Datagen(train_paths, mask_paths, batch_size=10)
-validation_generator = Datagen(valid_paths, valid_mask_paths, batch_size=10)
-test_generator = Datagen(test_paths, test_mask_paths, batch_size=10)
+training_generator = Datagen(train_paths, mask_paths, batch_size=5)
+validation_generator = Datagen(valid_paths, valid_mask_paths, batch_size=5)
+test_generator = Datagen(test_paths, test_mask_paths, batch_size=5)
 
-model = DeeplabV3Plus(image_size=256, num_classes=19)
+model = DeeplabV3Plus(image_size=512, num_classes=19)
+
 model.summary()
 loss = tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True)
 model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),
     loss=loss,
-    metrics=["accuracy", tf.keras.metrics.MeanIoU(num_classes=19)],
+    metrics=['accuracy',newIOU(num_classes=19)],
 )
 
-checkpoint_filepath = "model_checkpoint"
+checkpoint_filepath = "newnewnew2"
 
 model_checkpoint_callback = tf.keras.callbacks.ModelCheckpoint(
     filepath=checkpoint_filepath,
@@ -109,36 +124,21 @@ reduceonplateau = tf.keras.callbacks.ReduceLROnPlateau(
         min_lr=0.0
     )
 
-# model.fit_generator(generator=training_generator,
-#                     validation_data=validation_generator,
-#                     use_multiprocessing=False,
-#                     epochs = 40,
-#                     # initial_epoch=50,
-#                     callbacks = [model_checkpoint_callback, reduceonplateau] ,
-#                     workers = 6)
+early_stoping = tf.keras.callbacks.EarlyStopping(
+    monitor="val_loss",
+    min_delta=0,
+    patience=10,
+    verbose=0,
+    mode="auto",
+    baseline=None,
+    restore_best_weights=False,
+)
+model.fit_generator(generator=training_generator,
+                    validation_data=validation_generator,
+                    use_multiprocessing=False,
+                    epochs = 4,
+                    # initial_epoch=50,
+                    callbacks = [model_checkpoint_callback, reduceonplateau, early_stoping] ,
+                    workers = 6)
 
-use_saved_model = True    
-#####################Loading saved model if one exsists
-# if not os.path.exists('checkpoint_filepath/saved_model.pb') & use_saved_model:
-#     model.compile(optimizer = tf.keras.optimizers.Adam(learning_rate=0.001), loss = 'categorical_crossentropy', metrics = ["accuracy"],)
-# else:
-if use_saved_model:
-
-    # model.load_weights('checkpoint/saved_model.pb') #load the model from file
-    model = tf.keras.models.load_model(checkpoint_filepath)
-    #loss, acc = model.evaluate_generator(test_generator, steps=3, verbose=0)
-    #print('Restored model, accuracy: {:5.2f}%'.format(100 * acc))
-    make_folder("predictionimages")
-    predictions = model.predict_generator(test_generator, steps = 3)
-    predictions = np.squeeze(predictions)
-    predictions = np.argmax(predictions, axis=3)
-    #print(predictions.shape)
-    for i, ID in enumerate(predictions):
-        #print(ID.shape)
-        image = os.path.join("predictionimages", str(i) + '.png')
-        print(image)
-        cv2.imwrite(image, ID)
-
-
-
-#model.save("newmodel")
+model.save("newnewnew2")
